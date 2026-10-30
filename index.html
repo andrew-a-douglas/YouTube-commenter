@@ -211,6 +211,13 @@
     .side-col { position: static; max-height: none; overflow: visible; }
   }
 
+  /* Keep the video, timeline and buttons on screen together, even on short laptop screens */
+  .stage-fit {
+    width: min(100%, max(320px, calc((100vh - 14rem) * 16 / 9)));
+    margin-inline: auto;
+  }
+  #composer-slot-side .composer { margin: 0 0 1rem; }
+
   .player-frame {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -521,6 +528,7 @@
 
   <div class="workspace">
     <div class="stage-col">
+     <div class="stage-fit">
       <div class="player-frame" id="editor-frame">
         <div class="shield" id="shield" aria-hidden="true"></div>
         <div class="player-error" hidden></div>
@@ -535,6 +543,7 @@
         <button id="add-comment" class="btn" type="button">Comment <kbd>Enter</kbd></button>
       </div>
 
+      <div id="composer-slot-stage">
       <div id="composer" class="composer" hidden>
         <div class="composer-head">
           <span id="composer-range" class="range-label">0:00–0:05</span>
@@ -555,15 +564,19 @@
         <p class="composer-hint"><kbd>Enter</kbd> saves, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Tab</kbd> changes the range, <kbd>Esc</kbd> cancels</p>
       </div>
 
+      </div>
+
       <dl class="keys" aria-label="Keyboard shortcuts">
         <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Back or forward 5 seconds</dd>
         <dt><kbd>Enter</kbd></dt><dd>Pause and comment on what you just saw</dd>
         <dt><kbd class="mod-key">Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Reopen your last comment</dd>
       </dl>
+     </div>
     </div>
 
     <aside class="side-col">
+      <div id="composer-slot-side"></div>
       <div class="details">
         <label>Title
           <input id="f-title" type="text" placeholder="Feedback on your audition tape" autocomplete="off">
@@ -1080,6 +1093,18 @@
 
   // ---------- Editor ----------
 
+  // On laptop-width screens the comment box sits at the top of the right-hand
+  // column, so opening it never moves the video.
+  const wideLayout = matchMedia('(min-width: 900px)');
+  function placeComposer() {
+    const box = $('#composer');
+    const slot = wideLayout.matches ? $('#composer-slot-side') : $('#composer-slot-stage');
+    if (box.parentElement === slot) return;
+    const hadFocus = document.activeElement === $('#composer-text');
+    slot.append(box);
+    if (hadFocus) $('#composer-text').focus();
+  }
+
   const E = { draft: null, stage: null, composer: null, lastId: null, saveTimer: null, warned: false, rows: new Map() };
 
   function newDraft(videoId) {
@@ -1277,7 +1302,8 @@
     autoGrow(ta);
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
-    $('#composer').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (wideLayout.matches) $('.side-col').scrollTo({ top: 0 });
+    else $('#composer').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function refreshComposerRange() {
@@ -1333,7 +1359,7 @@
     renderEditorList();
     closeComposer(resume);
     const row = E.rows.get(savedId);
-    if (row) row.scrollIntoView({ block: 'nearest' });
+    if (row && wideLayout.matches) row.scrollIntoView({ block: 'nearest' });
   }
 
   function deleteComment(id) {
@@ -1548,6 +1574,9 @@
     });
 
     document.addEventListener('keydown', onEditorKey);
+
+    placeComposer();
+    wideLayout.addEventListener('change', placeComposer);
   }
 
   function onEditorKey(e) {
