@@ -20,7 +20,7 @@
     --mark: #F2B705;
     --mark-soft: #FFF1BF;
     --danger: #B3261E;
-    --topbar-h: 4.25rem;
+    --topbar-h: 3.5rem;
     --r-s: 6px;
     --r-m: 12px;
     --font: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -168,13 +168,14 @@
     justify-content: space-between;
     gap: 0.75rem;
     min-height: var(--topbar-h);
-    padding: 0.6rem clamp(1rem, 3vw, 2rem);
+    padding: 0.4rem clamp(1rem, 2vw, 1.5rem);
     background: var(--surface);
     border-bottom: 1px solid var(--line);
   }
   .brand-row { display: flex; align-items: center; gap: 0.5rem; }
   .brand-sm { font-size: 1.15rem; font-weight: 700; margin: 0; }
   .topbar-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .topbar .btn { min-height: 36px; }
   .banner {
     display: flex;
     flex-wrap: wrap;
@@ -190,14 +191,14 @@
   .banner-wrap { padding: 0 clamp(1rem, 2.5vw, 2rem); }
   .banner p { margin: 0; flex: 1 1 16rem; font-weight: 700; }
   .workspace {
+    --video-max: calc((100vh - 8.75rem) * 16 / 9);
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 390px);
-    gap: clamp(1rem, 2.5vw, 2rem);
-    max-width: 1440px;
-    margin: 0 auto;
-    padding: clamp(1rem, 2.5vw, 2rem);
+    grid-template-columns: minmax(0, var(--video-max)) minmax(300px, 1fr);
+    gap: clamp(1rem, 1.6vw, 1.5rem);
+    padding: 1rem clamp(1rem, 2vw, 1.5rem) 1.5rem;
     align-items: start;
   }
+  .side-col > * { max-width: 40rem; }
   .side-col {
     position: sticky;
     top: calc(var(--topbar-h) + 1rem);
@@ -213,10 +214,62 @@
 
   /* Keep the video, timeline and buttons on screen together, even on short laptop screens */
   .stage-fit {
-    width: min(100%, max(320px, calc((100vh - 14rem) * 16 / 9)));
+    width: min(100%, max(320px, var(--video-max)));
     margin-inline: auto;
   }
-  #composer-slot-side .composer { margin: 0 0 1rem; }
+  .controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }
+  .controls .strip { flex: 1; min-width: 0; margin-top: 0; }
+  .controls .clock { min-width: 5.5em; }
+  @media (max-width: 599px) {
+    .controls { flex-wrap: wrap; }
+    .controls .strip { order: -1; flex-basis: 100%; }
+    .controls .clock { flex: 1; }
+  }
+  /* On laptop screens the comment box floats over the bottom of the paused video,
+     so nothing else on the page moves while you type. */
+  #composer-slot-video {
+    position: absolute;
+    left: 50%;
+    bottom: 0.75rem;
+    z-index: 2;
+    width: min(46rem, calc(100% - 1.5rem));
+    transform: translateX(-50%);
+  }
+  #composer-slot-video .composer {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "head actions" "text text";
+    gap: 0.55rem 0.75rem;
+    margin: 0;
+    padding: 0.65rem 0.75rem 0.75rem;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  #composer-slot-video .composer-head { grid-area: head; margin: 0; flex-wrap: nowrap; }
+  #composer-slot-video .composer-actions { grid-area: actions; margin: 0; flex-wrap: nowrap; }
+  #composer-slot-video textarea {
+    grid-area: text;
+    min-height: 2.9em;
+    max-height: 7.5em;
+    overflow: auto;
+    background: var(--surface);
+  }
+  #composer-slot-video .composer-hint { display: none; }
+  #composer-slot-video .len-choice button { min-width: 2.8rem; min-height: 34px; }
+  #composer-slot-video .btn { min-height: 34px; }
+  #composer-slot-video { container-type: inline-size; }
+  /* Narrower videos: stay one row by dropping Cancel (Esc still cancels) */
+  @container (max-width: 600px) {
+    #composer-slot-video .composer { gap: 0.5rem; }
+    #composer-slot-video #composer-cancel { display: none; }
+    #composer-slot-video .len-choice button { min-width: 2.4rem; }
+  }
+  @container (max-width: 430px) {
+    #composer-slot-video .composer { grid-template-columns: 1fr; grid-template-areas: "head" "text" "actions"; }
+    #composer-slot-video .composer-actions { justify-content: flex-end; }
+  }
 
   .player-frame {
     position: relative;
@@ -387,6 +440,7 @@
     font-weight: 700;
     font-size: 0.92rem;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
     cursor: pointer;
   }
   .c-time svg { width: 1.05em; height: 1.05em; }
@@ -532,14 +586,14 @@
       <div class="player-frame" id="editor-frame">
         <div class="shield" id="shield" aria-hidden="true"></div>
         <div class="player-error" hidden></div>
+        <div id="composer-slot-video"></div>
       </div>
-      <div class="strip" id="editor-strip">
-        <div class="strip-track"><div class="strip-marks"></div><div class="strip-head"></div></div>
-      </div>
-      <div class="transport">
+      <div class="controls">
         <button id="play-toggle" class="btn icon-btn" type="button" aria-label="Play"></button>
         <span id="clock" class="clock">0:00 / 0:00</span>
-        <span class="grow"></span>
+        <div class="strip" id="editor-strip">
+          <div class="strip-track"><div class="strip-marks"></div><div class="strip-head"></div></div>
+        </div>
         <button id="add-comment" class="btn" type="button">Comment <kbd>Enter</kbd></button>
       </div>
 
@@ -554,7 +608,7 @@
           </div>
         </div>
         <label for="composer-text" class="sr-only">Comment</label>
-        <textarea id="composer-text" rows="3" placeholder="What did you notice?"></textarea>
+        <textarea id="composer-text" rows="2" placeholder="What did you notice?"></textarea>
         <div class="composer-actions">
           <button id="composer-delete" class="btn quiet danger" type="button" hidden>Delete</button>
           <span class="grow"></span>
@@ -570,13 +624,14 @@
         <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Back or forward 5 seconds</dd>
         <dt><kbd>Enter</kbd></dt><dd>Pause and comment on what you just saw</dd>
+        <dt><kbd>Tab</kbd></dt><dd>While commenting, switch between 5, 10 and 15 seconds</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Cancel the comment you’re writing</dd>
         <dt><kbd class="mod-key">Ctrl</kbd>+<kbd>Z</kbd></dt><dd>Reopen your last comment</dd>
       </dl>
      </div>
     </div>
 
     <aside class="side-col">
-      <div id="composer-slot-side"></div>
       <div class="details">
         <label>Title
           <input id="f-title" type="text" placeholder="Feedback on your audition tape" autocomplete="off">
@@ -1093,12 +1148,13 @@
 
   // ---------- Editor ----------
 
-  // On laptop-width screens the comment box sits at the top of the right-hand
-  // column, so opening it never moves the video.
+  // On anything wider than a phone the comment box floats over the bottom of the
+  // video, so opening it never moves anything else on the page.
   const wideLayout = matchMedia('(min-width: 900px)');
+  const floatComposer = matchMedia('(min-width: 600px)');
   function placeComposer() {
     const box = $('#composer');
-    const slot = wideLayout.matches ? $('#composer-slot-side') : $('#composer-slot-stage');
+    const slot = floatComposer.matches ? $('#composer-slot-video') : $('#composer-slot-stage');
     if (box.parentElement === slot) return;
     const hadFocus = document.activeElement === $('#composer-text');
     slot.append(box);
@@ -1302,8 +1358,7 @@
     autoGrow(ta);
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
-    if (wideLayout.matches) $('.side-col').scrollTo({ top: 0 });
-    else $('#composer').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    $('#composer').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function refreshComposerRange() {
@@ -1576,7 +1631,7 @@
     document.addEventListener('keydown', onEditorKey);
 
     placeComposer();
-    wideLayout.addEventListener('change', placeComposer);
+    floatComposer.addEventListener('change', placeComposer);
   }
 
   function onEditorKey(e) {
