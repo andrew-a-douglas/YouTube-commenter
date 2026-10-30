@@ -394,6 +394,7 @@
   .viewer { max-width: 1200px; margin: 0 auto; padding: 1.5rem clamp(1rem, 3vw, 2rem) 4rem; }
   .v-head h1 { font-size: clamp(1.7rem, 5vw, 2.5rem); letter-spacing: -0.015em; margin: 0 0 0.35rem; }
   .byline { margin: 0; color: var(--muted); }
+  .for-line { margin: 0 0 0.15rem; font-size: 1.15rem; font-weight: 700; }
   .note {
     margin: 1.1rem 0 0;
     max-width: 68ch;
@@ -418,6 +419,35 @@
     .v-stage { top: 1rem; padding: 0; }
   }
   @media (max-height: 500px) and (max-width: 899px) { .v-stage { position: static; } }
+
+  /* Duplicate panel */
+  .dup {
+    width: min(28rem, calc(100vw - 2rem));
+    padding: 1.25rem 1.25rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-m);
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .dup::backdrop { background: rgba(10, 16, 22, 0.45); }
+  .dup h2 { font-size: 1.2rem; margin: 0 0 0.35rem; }
+  .dup p { margin: 0 0 1rem; color: var(--muted); }
+  .dup label.field { display: grid; gap: 0.3rem; font-size: 0.92rem; font-weight: 700; color: var(--muted); }
+  .dup input[type="text"] {
+    width: 100%;
+    padding: 0.55em 0.75em;
+    border: 1px solid var(--line);
+    border-radius: var(--r-s);
+    background: var(--paper);
+    font-weight: 400;
+    color: var(--ink);
+  }
+  .dup fieldset { border: 0; margin: 1.1rem 0 0; padding: 0; }
+  .dup legend { padding: 0; margin-bottom: 0.4rem; font-size: 0.92rem; font-weight: 700; color: var(--muted); }
+  .dup .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 1rem; }
+  .dup .checks label { display: flex; align-items: center; gap: 0.5rem; min-height: 32px; cursor: pointer; }
+  .dup input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--ink); margin: 0; }
+  .dup .dup-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
 
   /* Toast */
   .toast {
@@ -474,6 +504,7 @@
       <button id="change-video" class="btn quiet" type="button">Change video</button>
     </div>
     <div class="topbar-actions">
+      <button id="duplicate" class="btn" type="button">Duplicate</button>
       <button id="copy-text" class="btn" type="button">Copy as text</button>
       <button id="preview" class="btn" type="button">Preview</button>
       <button id="copy-link" class="btn primary" type="button">Copy share link</button>
@@ -484,7 +515,7 @@
     <div id="resume-banner" class="banner" hidden>
       <p id="resume-text"></p>
       <button id="resume-continue" class="btn primary" type="button">Continue</button>
-      <button id="resume-fresh" class="btn" type="button">Start fresh</button>
+      <button id="resume-fresh" class="btn" type="button">Start a new one</button>
     </div>
   </div>
 
@@ -537,6 +568,9 @@
         <label>Title
           <input id="f-title" type="text" placeholder="Feedback on your audition tape" autocomplete="off">
         </label>
+        <label id="for-row" hidden>For
+          <input id="f-for" type="text" placeholder="Who this feedback is for" autocomplete="off">
+        </label>
         <label>From
           <input id="f-from" type="text" placeholder="Your name" autocomplete="name">
         </label>
@@ -558,6 +592,7 @@
 <main id="viewer" class="viewer" hidden>
   <header class="v-head">
     <h1 id="v-title">Video feedback</h1>
+    <p id="v-for" class="for-line" hidden></p>
     <p id="v-byline" class="byline"></p>
     <p id="v-note" class="note" hidden></p>
   </header>
@@ -577,6 +612,29 @@
   </div>
 </main>
 
+<dialog id="dup-dialog" class="dup" aria-labelledby="dup-title">
+  <form method="dialog">
+    <h2 id="dup-title">Duplicate this session</h2>
+    <p>Same video, fresh session. This one stays saved in your drafts.</p>
+    <label class="field">For (optional)
+      <input id="dup-for" type="text" placeholder="Who the new one is for" autocomplete="off">
+    </label>
+    <fieldset>
+      <legend>Copy over</legend>
+      <div class="checks">
+        <label><input type="checkbox" name="title"> Title</label>
+        <label><input type="checkbox" name="from"> From</label>
+        <label><input type="checkbox" name="note"> Overall note</label>
+        <label><input type="checkbox" name="comments"> Comments</label>
+      </div>
+    </fieldset>
+    <div class="dup-actions">
+      <button id="dup-cancel" class="btn" type="button">Cancel</button>
+      <button class="btn primary" type="submit" value="ok">Duplicate</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" class="toast" role="status" aria-live="polite" hidden>
   <span id="toast-text"></span>
   <button id="toast-action" class="btn" type="button" hidden></button>
@@ -591,6 +649,7 @@
   const PREFIX = 'tapenotes:';
   const DRAFT_PREFIX = PREFIX + 'draft:';
   const FROM_KEY = PREFIX + 'from';
+  const DUP_KEY = PREFIX + 'duplicate-choices';
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   const ICON = {
@@ -675,10 +734,16 @@
   function storageSet(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } }
   function storageRemove(key) { try { localStorage.removeItem(key); } catch { /* ignore */ } }
 
-  function readDraft(videoId) {
+  // Each session is stored under its own id. Drafts saved by the first version
+  // were keyed by video id; they keep that key as their id.
+  function readDraft(id) {
     try {
-      const d = JSON.parse(storageGet(DRAFT_PREFIX + videoId));
-      if (d && d.videoId === videoId && Array.isArray(d.comments)) return d;
+      const d = JSON.parse(storageGet(DRAFT_PREFIX + id));
+      if (d && typeof d.videoId === 'string' && Array.isArray(d.comments)) {
+        d.id = d.id || id;
+        if (typeof d.for !== 'string') d.for = '';
+        return d;
+      }
     } catch { /* ignore */ }
     return null;
   }
@@ -696,7 +761,7 @@
     return out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
-  const hasContent = (d) => !!(d && (d.comments.length || (d.title || '').trim() || (d.note || '').trim()));
+  const hasContent = (d) => !!(d && (d.comments.length || (d.title || '').trim() || (d.note || '').trim() || (d.for || '').trim()));
 
   // ---------- Share-link encoding ----------
   // The link holds everything after "#f=": "z" + deflate-compressed JSON in base64url,
@@ -743,6 +808,7 @@
   function toPayload(d) {
     const p = { v: d.videoId, c: d.comments.map((c) => [c.end, c.len, c.text]) };
     if ((d.title || '').trim()) p.t = d.title.trim();
+    if ((d.for || '').trim()) p.r = d.for.trim();
     if ((d.from || '').trim()) p.f = d.from.trim();
     if ((d.note || '').trim()) p.n = d.note.trim();
     if (d.date) p.d = d.date;
@@ -761,7 +827,7 @@
         text: str(x[2]),
       }))
       .sort((a, b) => a.end - b.end);
-    return { videoId: p.v, title: str(p.t), from: str(p.f), note: str(p.n), date: str(p.d), comments };
+    return { videoId: p.v, title: str(p.t), for: str(p.r), from: str(p.f), note: str(p.n), date: str(p.d), comments };
   }
 
   function baseUrl() { return location.href.split('#')[0]; }
@@ -1017,14 +1083,14 @@
   const E = { draft: null, stage: null, composer: null, lastId: null, saveTimer: null, warned: false, rows: new Map() };
 
   function newDraft(videoId) {
-    return { videoId, title: '', from: storageGet(FROM_KEY) || '', note: '', date: '', comments: [], updatedAt: Date.now() };
+    return { id: uid(), videoId, title: '', for: '', from: storageGet(FROM_KEY) || '', note: '', date: '', comments: [], updatedAt: Date.now() };
   }
 
   function persist() {
     const d = E.draft;
     if (!d) return;
     d.updatedAt = Date.now();
-    if (!storageSet(DRAFT_PREFIX + d.videoId, JSON.stringify(d)) && !E.warned) {
+    if (!storageSet(DRAFT_PREFIX + d.id, JSON.stringify(d)) && !E.warned) {
       E.warned = true;
       toast('This browser isn’t saving drafts. Copy your share link before closing the tab.');
     }
@@ -1051,38 +1117,47 @@
     $('#recent').hidden = drafts.length === 0;
     for (const d of drafts) {
       const edited = formatDate(new Date(d.updatedAt).toISOString().slice(0, 10), true);
-      const meta = `${plural(d.comments.length, 'comment')}, edited ${edited}`;
+      const who = (d.for || '').trim() ? `For ${d.for.trim()}, ` : '';
+      const meta = `${who}${plural(d.comments.length, 'comment')}, edited ${edited}`;
       list.append(el('li', {},
-        el('button', { type: 'button', class: 'recent-open', onclick: () => openVideo(d.videoId, { fromRecent: true }) },
+        el('button', { type: 'button', class: 'recent-open', onclick: () => openSession(d, { banner: null }) },
           el('strong', { text: (d.title || '').trim() || 'Untitled feedback' }),
           el('span', { text: meta })),
         el('button', {
           type: 'button', class: 'btn quiet', text: 'Remove',
           onclick: () => {
             const backup = JSON.stringify(d);
-            storageRemove(DRAFT_PREFIX + d.videoId);
+            storageRemove(DRAFT_PREFIX + d.id);
             renderRecent();
-            toast('Draft removed', { label: 'Undo', fn: () => { storageSet(DRAFT_PREFIX + d.videoId, backup); renderRecent(); } });
+            toast('Draft removed', { label: 'Undo', fn: () => { storageSet(DRAFT_PREFIX + d.id, backup); renderRecent(); } });
           },
         })));
     }
   }
 
-  async function openVideo(videoId, { fromRecent = false } = {}) {
-    const saved = readDraft(videoId);
-    E.draft = saved && hasContent(saved) ? saved : newDraft(videoId);
+  // Opening a pasted link: continue the latest draft for that video if there is one.
+  function openVideo(videoId) {
+    const saved = listDrafts().filter((d) => d.videoId === videoId && hasContent(d));
+    if (!saved.length) return openSession(newDraft(videoId), { banner: null });
+    const latest = saved[0];
+    let text;
+    if (saved.length > 1) {
+      text = `You have ${saved.length} saved drafts for this video. This is the latest${latest.for ? `, for ${latest.for}` : ''}.`;
+    } else if (latest.comments.length) {
+      text = `You have ${plural(latest.comments.length, 'saved comment')} for this video.`;
+    } else {
+      text = 'You have a saved draft for this video.';
+    }
+    return openSession(latest, { banner: text });
+  }
+
+  async function openSession(draft, { banner }) {
+    E.draft = draft;
     E.lastId = null;
     show('editor');
 
-    const banner = $('#resume-banner');
-    if (saved && hasContent(saved) && !fromRecent) {
-      $('#resume-text').textContent = saved.comments.length
-        ? `You have ${plural(saved.comments.length, 'saved comment')} for this video.`
-        : 'You have a saved draft for this video.';
-      banner.hidden = false;
-    } else {
-      banner.hidden = true;
-    }
+    $('#resume-text').textContent = banner || '';
+    $('#resume-banner').hidden = !banner;
 
     fillDetails();
     E.stage = makeStage({
@@ -1099,14 +1174,14 @@
     });
     renderEditorList();
     updatePlayButton();
-    await E.stage.load(videoId);
+    await E.stage.load(draft.videoId);
     renderEditorList();
   }
 
   function teardownEditor() {
     if (E.composer) saveComposer({ resume: false });
     clearTimeout(E.saveTimer);
-    if (E.draft) persist();
+    if (E.draft && (hasContent(E.draft) || E.draft.duplicated)) persist();
     if (E.stage) E.stage.destroy();
     E.stage = null;
     E.draft = null;
@@ -1117,6 +1192,8 @@
   function fillDetails() {
     const d = E.draft;
     $('#f-title').value = d.title;
+    $('#f-for').value = d.for || '';
+    $('#for-row').hidden = !(d.for || d.duplicated);
     $('#f-from').value = d.from;
     $('#f-note').value = d.note;
     autoGrow($('#f-note'));
@@ -1286,6 +1363,62 @@
     openComposer('edit', target);
   }
 
+  // Duplicating a session for the next person
+
+  function readDupChoices() {
+    try {
+      const c = JSON.parse(storageGet(DUP_KEY));
+      if (c && typeof c === 'object') return c;
+    } catch { /* ignore */ }
+    return { title: true, from: true, note: false, comments: false };
+  }
+
+  function openDuplicate() {
+    if (!E.draft) return;
+    if (E.composer) saveComposer({ resume: false });
+    if (E.stage) E.stage.pause();
+    const dialog = $('#dup-dialog');
+    const choices = readDupChoices();
+    dialog.querySelectorAll('.checks input').forEach((box) => { box.checked = !!choices[box.name]; });
+    $('#dup-for').value = '';
+    dialog.returnValue = '';
+    dialog.showModal();
+    $('#dup-for').focus();
+  }
+
+  function duplicateSession() {
+    const old = E.draft;
+    if (!old) return;
+    const choices = {};
+    $('#dup-dialog').querySelectorAll('.checks input').forEach((box) => { choices[box.name] = box.checked; });
+    storageSet(DUP_KEY, JSON.stringify(choices));
+
+    const next = newDraft(old.videoId);
+    next.duplicated = true;
+    next.for = $('#dup-for').value.trim();
+    if (choices.title) next.title = old.title;
+    if (choices.from) next.from = old.from;
+    if (choices.note) next.note = old.note;
+    if (choices.comments) {
+      next.comments = old.comments.map((c) => ({ ...c, id: uid(), created: Date.now() }));
+    }
+    persist();
+    switchToSession(next);
+    if (E.stage) E.stage.seek(0);
+    toast(next.for ? `New session for ${next.for}. The last one is saved in your drafts.` : 'New session started. The last one is saved in your drafts.');
+  }
+
+  // Swap the editor to another session on the same video without reloading the player.
+  function switchToSession(draft) {
+    clearTimeout(E.saveTimer);
+    if (E.draft && hasContent(E.draft)) persist();
+    E.draft = draft;
+    E.lastId = null;
+    if (hasContent(draft) || draft.duplicated) persist();
+    fillDetails();
+    renderEditorList();
+  }
+
   // Sharing
 
   function shareReady() {
@@ -1322,6 +1455,7 @@
   function plainText(d) {
     const lines = [];
     if ((d.title || '').trim()) lines.push(d.title.trim());
+    if ((d.for || '').trim()) lines.push(`For ${d.for.trim()}`);
     lines.push([(d.from || '').trim() && `From ${d.from.trim()}`, formatDate(todayISO())].filter(Boolean).join(', '));
     lines.push('');
     if ((d.note || '').trim()) lines.push(d.note.trim(), '');
@@ -1362,27 +1496,20 @@
 
     $('#resume-continue').addEventListener('click', () => { $('#resume-banner').hidden = true; });
     $('#resume-fresh').addEventListener('click', () => {
-      const old = E.draft;
-      const backup = JSON.stringify(old);
       if (E.composer) closeComposer(false);
-      E.draft = newDraft(old.videoId);
-      storageRemove(DRAFT_PREFIX + old.videoId);
-      fillDetails();
-      renderEditorList();
+      switchToSession(newDraft(E.draft.videoId));
       $('#resume-banner').hidden = true;
-      toast('Started fresh', {
-        label: 'Undo',
-        fn: () => {
-          if (!E.draft || E.draft.videoId !== old.videoId) return;
-          E.draft = JSON.parse(backup);
-          persist();
-          fillDetails();
-          renderEditorList();
-        },
-      });
+      toast('Started a new session. The other one is still in your drafts.');
+    });
+
+    $('#duplicate').addEventListener('click', openDuplicate);
+    $('#dup-cancel').addEventListener('click', () => $('#dup-dialog').close(''));
+    $('#dup-dialog').addEventListener('close', () => {
+      if ($('#dup-dialog').returnValue === 'ok') duplicateSession();
     });
 
     $('#f-title').addEventListener('input', (e) => { E.draft.title = e.target.value; persistSoon(); });
+    $('#f-for').addEventListener('input', (e) => { E.draft.for = e.target.value; persistSoon(); });
     $('#f-from').addEventListener('input', (e) => { E.draft.from = e.target.value; storageSet(FROM_KEY, e.target.value.trim()); persistSoon(); });
     $('#f-note').addEventListener('input', (e) => { E.draft.note = e.target.value; autoGrow(e.target); persistSoon(); });
     $('#composer-text').addEventListener('input', (e) => autoGrow(e.target));
@@ -1411,15 +1538,20 @@
 
     // Clicking a button with the mouse shouldn't move keyboard focus onto it,
     // so Enter and Space keep working as shortcuts afterwards.
+    // Clicking a player button also takes the cursor out of the Title, For, From
+    // and Overall note boxes, so shortcuts work straight away.
     document.addEventListener('mousedown', (e) => {
-      if (!$('#editor').hidden && e.target.closest('button')) e.preventDefault();
+      if ($('#editor').hidden || !e.target.closest('button') || e.target.closest('dialog')) return;
+      e.preventDefault();
+      const active = document.activeElement;
+      if (active && active.closest('.details')) active.blur();
     });
 
     document.addEventListener('keydown', onEditorKey);
   }
 
   function onEditorKey(e) {
-    if ($('#editor').hidden || !E.stage || !E.stage.ready) return;
+    if ($('#editor').hidden || !E.stage || !E.stage.ready || $('#dup-dialog').open) return;
     const target = e.target;
 
     if (target === $('#composer-text') && E.composer) {
@@ -1478,6 +1610,8 @@
     document.title = fb.title ? `${fb.title} – Tape Notes` : 'Video feedback – Tape Notes';
     $('#v-title').textContent = fb.title || 'Video feedback';
     const byline = [fb.from && `From ${fb.from}`, formatDate(fb.date)].filter(Boolean).join(', ');
+    $('#v-for').textContent = fb.for ? `For ${fb.for}` : '';
+    $('#v-for').hidden = !fb.for;
     $('#v-byline').textContent = byline;
     $('#v-byline').hidden = !byline;
     $('#v-note').textContent = fb.note;
